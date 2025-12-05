@@ -3,6 +3,43 @@ import ipaddress
 import socketpool
 import time
 from adafruit_httpserver import Server, Request, Response, POST, GET
+import adafruit_ili9341
+import board, busio, displayio, os, fourwire
+
+
+# Board pins for Display
+board_type = os.uname().machine
+print(f"Board: {board_type}")
+
+if 'Pico' in board_type:
+    cs_pin, reset_pin, dc_pin, mosi_pin, clk_pin = board.GP13, board.GP14, board.GP15, board.GP11, board.GP10
+
+# Display Setup
+displayio.release_displays()
+
+# SPI bus for display
+spi = busio.SPI(clock=clk_pin, MOSI=mosi_pin)
+
+# Display Bus
+display_bus = fourwire.FourWire(
+    spi,
+    command=dc_pin,
+    chip_select=cs_pin,
+    reset=reset_pin
+)
+
+display = adafruit_ili9341.ILI9341(
+    display_bus,
+    width=240,
+    height=320,
+    rotation=270, # Portrait mode
+    backlight_pin=None # Board has a backlight
+
+)
+
+print("ILI9341 Initialized")
+
+
 
 print("Connecting to WiFI")
 
@@ -56,8 +93,8 @@ def webpage(state):
 # --- Handler for GET requests ---
 @server.route("/", GET)
 def base(request: Request):
-    print("Returning Web")
-    #  serve the HTML f string
+    #print("Returning Web")
+    #  serve the HTML f strins
     #  with content type text/html
     return Response(request, f"{webpage("")}", content_type="text/html")
 
@@ -72,6 +109,14 @@ def base(request: Request):
     if usermsg is not None:
         state = "Sending User Message: " + usermsg
         print(state)
+
+        # Set the display color to red
+        if usermsg is "Red":
+            displayio.Bitmap.fill((255, 0, 0))
+        # Set the display color to blue
+        elif usermsg is "Blue":
+            displayio.terminal.display.fill((0, 0, 255))
+
     #  serve the HTML f string
     #  with content type text/html
     return Response(request, f"{webpage(state)}", content_type="text/html")
@@ -90,6 +135,7 @@ except OSError:
     time.sleep(5)
     print("restarting..")
     microcontroller.reset()
+
 
 while True:
     try:
