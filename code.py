@@ -5,7 +5,8 @@ import time
 from adafruit_httpserver import Server, Request, Response, POST, GET
 import adafruit_ili9341
 import board, busio, displayio, os, fourwire
-
+from adafruit_display_text import label
+import terminalio
 
 # Board pins for Display
 board_type = os.uname().machine
@@ -14,7 +15,7 @@ print(f"Board: {board_type}")
 if 'Pico' in board_type:
     cs_pin, reset_pin, dc_pin, mosi_pin, clk_pin = board.GP13, board.GP14, board.GP15, board.GP11, board.GP10
 
-# Display Setup
+# Release any used display bus
 displayio.release_displays()
 
 # SPI bus for display
@@ -28,34 +29,84 @@ display_bus = fourwire.FourWire(
     reset=reset_pin
 )
 
+# Screen Dimensions
+screen_width = 240
+screen_height = 320
+
+# Setup up ILI9341 Parameters
 display = adafruit_ili9341.ILI9341(
     display_bus,
-    width=240,
-    height=320,
+    width=screen_width,
+    height=screen_height,
     rotation=270, # Portrait mode
     backlight_pin=None # Board has a backlight
-
 )
-
 print("ILI9341 Initialized")
 
+# Make the display context
+main_splash = displayio.Group()
+display.root_group = main_splash
+
+# --- Text Offsets ---- #
+xOffsetfromscreen = 2 #
+yOffsetfromscreen = 5
+
+yOffset = 30 # Offset from other fields
+
+# --- Create the Labels ---
+picostatus_disp = label.Label(
+    terminalio.FONT,
+    text="",
+    x= xOffsetfromscreen,
+    y= yOffsetfromscreen
+)
+
+clientresp_disp = label.Label(
+    terminalio.FONT,
+    text="",
+    x= xOffsetfromscreen,
+    y= yOffsetfromscreen + yOffset + picostatus_disp.y
+)
+
+usrmsg_disp = label.Label(
+    terminalio.FONT,
+    text="",
+    x= xOffsetfromscreen,
+    y= yOffset + clientresp_disp.y,
+    color= 0xFFFFFF,  # White
+    scale=2 # Font size bigger
+)
+
+# --- Add to Display ---
+main_splash.append(picostatus_disp)
+main_splash.append(clientresp_disp)
+main_splash.append(usrmsg_disp)
 
 
-print("Connecting to WiFI")
+#---- Function for Label displays -----#
+def picostatusfunc(_status):
+    print(_status)
+    picostatus_disp.text = _status
+
+def clientrespfunc(_rsp):
+    print(_rsp)
+    clientresp_disp.text = _rsp
+
 
 #  set static IP address
+picostatusfunc("Connecting to WiFI")
 ipv4 = ipaddress.IPv4Address("192.168.0.74")
 netmask = ipaddress.IPv4Address("255.255.255.0")
 gateway = ipaddress.IPv4Address("192.168.0.1")
 wifi.radio.set_ipv4_address(ipv4=ipv4, netmask=netmask, gateway=gateway)
 
 # Wi-Fi credentials
-ssid = "Girls_Gone_Wifi"
-password = "jalapeno"
+ssid = "SSID_NAME"
+password = "PASSWORD"
 
 # Connect to WLAN
 wifi.radio.connect(ssid, password)
-print("Connected to WiFI")
+picostatusfunc("Connected to WiFI")
 
 # Web Server
 pool = socketpool.SocketPool(wifi.radio)
@@ -93,7 +144,7 @@ def webpage(state):
 # --- Handler for GET requests ---
 @server.route("/", GET)
 def base(request: Request):
-    #print("Returning Web")
+    #picostatusfunc("Returning Web")
     #  serve the HTML f strins
     #  with content type text/html
     return Response(request, f"{webpage("")}", content_type="text/html")
@@ -108,7 +159,8 @@ def base(request: Request):
     usermsg = request.form_data.get("usermsg")
     if usermsg is not None:
         state = "Sending User Message: " + usermsg
-        print(state)
+        clientrespfunc(state)
+        usrmsg_disp.text = usermsg
 
         # Set the display color to red
         if usermsg is "Red":
@@ -125,29 +177,33 @@ def base(request: Request):
 clock = time.monotonic()  #  time.monotonic() holder for server ping
 ping_address = ipaddress.ip_address("8.8.4.4")
 
+
 # startup the server
 try:
-    print("starting server..")
+    picostatusfunc("starting server..")
     server.start(str(wifi.radio.ipv4_address), port=80)
-    print("Listening on http://%s:80" % wifi.radio.ipv4_address)
+    picostatusfunc("Listening on http://%s:80" % wifi.radio.ipv4_address)
 #  if the server fails to begin, restart the pico w
 except OSError:
     time.sleep(5)
-    print("restarting..")
+    picostatusfunc("restarting..")
     microcontroller.reset()
+
 
 
 while True:
     try:
         if (clock + 30) < time.monotonic():
             if wifi.radio.ping(ping_address) is None:
-                print("lost connection")
+                picostatusfunc("lost connection")
             else:
-                print("connected")
+                picostatusfunc("connected")
             clock = time.monotonic()
 
         #  poll the server for incoming/outgoing requests
         server.poll()
     except Exception as e:
-        print(e)
+        picostatusfunc(e)
         continue
+
+
